@@ -1,0 +1,672 @@
+---
+title: "Portfolio2"
+author: "Jasprit Singh Aujla"
+output: html_document
+date: "2023-11-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# to improve performance when running on department server. Comment out if running locally
+flexiblas::flexiblas_load_backend("OPENBLAS-THREADS") |>
+flexiblas::flexiblas_switch()
+flexiblas::flexiblas_set_num_threads(8)
+```
+
+# Toy Example: Tesla Ads Simulation 
+```{r}
+# doesn't make sense to add random noise right? Since this is a glm and in a glm 
+# there is no explicit error term
+set.seed(123)
+
+# Number of consumers
+num_consumers <- 1000
+
+# covariates for the consumer's problem: income, age, gender, family or friend
+# has a Tesla, near a Tesla dealership
+
+# Generate random data for income (in tens of thousands)
+income <- round(rnorm(num_consumers, mean = 60, sd = 15))
+
+# Generate random data for age
+age <- sample(18:65, num_consumers, replace = TRUE)
+
+# Generate random data for gender (0 for male, 1 for female)
+gender <- sample(0:1, num_consumers, replace = TRUE)
+
+# Generate random data for having a friend or family with a Tesla (binary variable)
+has_tesla_connection <- sample(0:1, num_consumers, replace = TRUE)
+
+# Generate random data for proximity to a Tesla dealership (binary variable)
+# assume 1 represents 'near' and 0 represents 'not near'
+near_dealership <- sample(0:1, num_consumers, replace = TRUE)
+
+# advertiser's problem additional covariates: occupation of consumer, whether the consumer owns a 
+# car, how much online activity the consumer has, whether the consumer is environmentally conscious, 
+# age, income, gender 
+
+# Generate random data for occupation (1 for technology-related occupation, 0 otherwise)
+tech_occupation <- sample(0:1, num_consumers, replace = TRUE)
+
+# Generate random data for car ownership (1 for car owner, 0 otherwise)
+car_owner <- sample(0:1, num_consumers, replace = TRUE)
+
+# Generate random data for online activity (score from 0 to 10)
+online_activity <- sample(0:10, num_consumers, replace = TRUE)
+
+# Generate random data for environmental concerns (binary variable)
+environmental_concerns <- sample(0:1, num_consumers, replace = TRUE)
+
+# Create a data frame
+ad_data <- data.frame(
+  Income = income,
+  Age = age,
+  Gender = gender,
+  Has_Tesla_Connection = has_tesla_connection,
+  Near_Dealership = near_dealership,
+  Tech_Occupation = tech_occupation,
+  Car_Owner = car_owner,
+  Online_Activity = online_activity,
+  Environmental_Concerns = environmental_concerns
+)
+
+print(head(ad_data))
+```
+
+```{r}
+# advertiser's problem
+set.seed(123)
+
+beta_0 <- -6  # exp(-6) = 0.0002 is the odds that an advertiser is interested in a customer with 0 income, 0 age, male, not a car_owner, not active onliny and is not environmentally conscious
+beta_Income <- 0.2 # exp(-0.2) each 10k increase in income increases the odds of being interested in a customer by 1.22
+beta_Age <- -0.2 # each additional year of age reduces the odds by exp(-0.2) = 0.82
+beta_Gender <- 0.3 # being male increases the odds by exp(0.3) = 1.35
+beta_Car_Owner <- 0.05 # being a car owner increases the odds by exp(0.05) = 1.05
+beta_Online_Activity <- 0.2 # exp(0.2) each additional level of online activity increases the odds of being interested in a customer by 1.22
+beta_Environmental_Concerns <- 0.6 # exp(0.6) being environmentally conscious increases the odds of being interested in a customer by 1.8
+
+# Calculate the logit of the probability of ad_int
+logit_probabilities <- beta_0 +
+  beta_Income * ad_data$Income +
+  beta_Age * ad_data$Age +
+  beta_Gender * ad_data$Gender +
+  beta_Car_Owner * ad_data$Car_Owner +
+  beta_Online_Activity * ad_data$Online_Activity +
+  beta_Environmental_Concerns * ad_data$Environmental_Concerns
+
+# Calculate probabilities from the logit values
+ad_probabilities <- 1 / (1 + exp(-logit_probabilities))
+
+# Display the first few logit values and probabilities
+print("First few logit values:")
+print(head(logit_probabilities))
+
+print("First few predicted probabilities:")
+print(head(ad_probabilities))
+
+# Generate ad_int outcomes from a Bernoulli distribution
+ad_int <- rbinom(num_consumers, 1, ad_probabilities)
+
+# Add ad_int to the data frame
+ad_data$Ad_Int = ad_int
+
+# Display the updated simulated data
+print(head(ad_data))
+
+mean(ad_data$Ad_Int)
+```
+
+```{r}
+# consumer's problem
+set.seed(123)
+
+# Assume some parameter values for the logistic model
+gamma_0 <- -5  # Intercept. exp(-5) = 0.0007 is the odds between being interested and not interested in the ad when income = 0, age = 0, gender = male, not a car owner, no Tesla connection, not near a dealership and not environmentally conscious
+gamma_Income <- 0.1 # a $10,000 increase in income increases the odds of being interested in a Tesla ad by exp(0.1) = 1.105
+gamma_Age <- -0.1 # each additional year of age reduces the odds by exp(-0.1) = 0.9
+gamma_Gender <- 0.2 # being male increases the odds by exp(0.1) = 1.22
+gamma_Car_Owner <- 0.05 # being a car owner increases the odds by exp(0.05) = 1.05
+gamma_Has_Tesla_Connection <- 0.7 # having a friend/family who has a Tesla increases the odds by exp(0.7) = 2.01
+gamma_Near_Dealership <- 0.4 # living close to a Tesla dealership increases the odds by exp(0.4) = 1.49
+gamma_Environmental_Concerns <- 0.5 # being environmentally conscious increases the odds by exp(0.5) = 1.65
+gamma_Tech_Occupation <- 0.4 # exp(0.4) working in tech increases the odds of the consumer being interested in the ad by 1.49
+
+
+# Calculate the logit of the probability of ad_int
+logit_probabilities2 <- gamma_0 +
+  gamma_Income * ad_data$Income +
+  gamma_Age * ad_data$Age +
+  gamma_Gender * ad_data$Gender +
+  gamma_Car_Owner * ad_data$Car_Owner +
+  gamma_Has_Tesla_Connection * ad_data$Has_Tesla_Connection + 
+  gamma_Near_Dealership * ad_data$Near_Dealership +
+  gamma_Environmental_Concerns * ad_data$Environmental_Concerns + 
+  gamma_Tech_Occupation*ad_data$Tech_Occupation
+
+# Calculate probabilities from the logit values
+ad_probabilities2 <- 1 / (1 + exp(-logit_probabilities2))
+
+# Display the first few logit values and probabilities
+print("First few logit values:")
+print(head(logit_probabilities2))
+
+print("First few predicted probabilities:")
+print(head(ad_probabilities2))
+
+# Generate ad_int outcomes from a Bernoulli distribution
+cons_int <- rbinom(num_consumers, 1, ad_probabilities2)
+
+# Add ad_int to the data frame
+ad_data$Cons_Int = cons_int
+
+# Display the updated simulated data
+print(head(ad_data))
+
+mean(ad_data$Cons_Int)
+```
+
+
+# Advertiser's side of the problem
+```{r}
+advertiser_model <- glm(Ad_Int ~ Income + Age + Gender + Car_Owner
+                      + Online_Activity + Environmental_Concerns, 
+                      family = "binomial"(link = "logit"), data = ad_data)
+```
+
+```{r}
+summary(advertiser_model)
+```
+
+```{r}
+# ROC curve
+library(pROC)
+predicted_probs <- predict(advertiser_model, type = "response")
+
+roc_curve <- roc(ad_data$Ad_Int, predicted_probs)
+
+# Calculate AUC-ROC
+auc_score <- auc(roc_curve)
+
+# Print the AUC-ROC
+cat("AUC-ROC:", auc_score, "\n")
+```
+
+# Consumer's side of the problem
+```{r}
+consumer_model <- glm(Cons_Int ~ Income + Age + Gender + Tech_Occupation 
+                      + Car_Owner + Has_Tesla_Connection + Environmental_Concerns
+                      + Near_Dealership, 
+                      family = "binomial"(link = "logit"), data = ad_data)
+```
+
+```{r}
+summary(consumer_model)
+```
+
+```{r}
+# ROC curve
+library(pROC)
+predicted_probs2 <- predict(consumer_model, type = "response")
+
+roc_curve2 <- roc(ad_data$Cons_Int, predicted_probs2)
+
+# Calculate AUC-ROC
+auc_score2 <- auc(roc_curve2)
+
+# Print the AUC-ROC
+cat("AUC-ROC:", auc_score2, "\n")
+```
+
+
+```{r}
+# predicted probabilities 
+ad_pp <- predict(advertiser_model, type = "response", newdata = ad_data)
+con_pp <- predict(consumer_model, type = "response", newdata = ad_data)
+```
+
+```{r}
+# multiply the two probabilities together
+product <- rev(sort(ad_pp*con_pp)) # from highest to lowest probability 
+product <- kable(product)
+```
+
+# Application (Facebook 100 Data - Duke)
+```{r}
+# import data from csv 
+library(readr)
+Duke <- read_csv("Duke.csv", col_names = FALSE) # 9895 by 7 matrix 
+Duke_nodes <- read_csv("Duke_nodes.csv", col_names = FALSE) # 9895 by 9895 matrix of 1s and 0s
+```
+
+```{r}
+Duke_colnames <- c("student_or_faculty", "gender", "major", "second_major_minor",
+                   "dorm_house", "year", "high_school")
+colnames(Duke) <- Duke_colnames
+Duke <- Duke %>%
+  mutate(individual_id = 1:n())
+```
+
+```{r}
+# data cleaning
+Duke <- Duke %>%
+  select(-second_major_minor) 
+# don't think this is a strong predictor of connections; also a lot of missing data
+
+# missing value treatment: decided to only keep those observations with no missing values
+Duke[Duke == 0] <- NA # currently missing values coded as 0s; changing to NAs
+missing_rows <- apply(Duke, 1, function(row) any(is.na(row))) # check for missing values in each row
+
+# Identify rows with missing values
+rows_with_missing <- which(missing_rows)
+length(rows_with_missing) # 4856 observations
+
+# delete rows with missing values
+Duke_cleaned <- Duke[-rows_with_missing, ] # 5039 observations left 
+```
+
+```{r}
+# delete the corresponding rows and columns in the Duke_nodes dataset 
+Duke_nodes_cleaned <- Duke_nodes[-rows_with_missing, -rows_with_missing]
+
+# Check if each column has fewer than 50 ones i.e., fewer than 50 friends
+few_ones_columns <- which(apply(Duke_nodes_cleaned, 2, function(col) sum(col == 1) < 50))
+
+# Subset the DataFrame to include only columns with fewer than 10 ones
+Duke_nodes_cleaned <- Duke_nodes_cleaned[-few_ones_columns, -few_ones_columns] # 3247 obs left
+
+# do the same for Duke_cleaned
+Duke_cleaned <- Duke_cleaned[-few_ones_columns, ] # 3247 obs left
+
+# Create a new column "connections" in Duke_cleaned where each cell in the row 
+# is a list of 3247 elements which contain the 1s and 0s encoding the relationship
+# between the different individuals 
+Duke_cleaned <- Duke_cleaned %>%
+  mutate(connections = apply(Duke_nodes_cleaned, 1, function(row) as.list(row)))
+```
+
+```{r}
+# convert the covariates to categorical 
+Duke_cleaned$student_or_faculty <- as.factor(Duke_cleaned$student_or_faculty)
+Duke_cleaned$gender <- as.factor(Duke_cleaned$gender)
+Duke_cleaned$major <- as.factor(Duke_cleaned$major)
+Duke_cleaned$dorm_house <- as.factor(Duke_cleaned$dorm_house)
+Duke_cleaned$year <- as.factor(Duke_cleaned$year)
+Duke_cleaned$high_school <- as.factor(Duke_cleaned$high_school)
+
+# remove dataframes that are no longer needed to conserve memory
+rm(Duke, Duke_nodes)
+```
+
+```{r}
+# check whether this is the right implementation with David after the presentation
+library(glmnet)
+set.seed(123)
+x <- model.matrix(~ .-1, Duke_cleaned[-1,-c(7,8)])
+outcome <- unlist(Duke_cleaned$connections[[1]][-1])
+model1_cv <- cv.glmnet(x = x, y = outcome, family = "binomial", alpha = 1)
+model1_pred <- predict(model1_cv, newx = x, type = "response", 
+                       s = "lambda.min") 
+#unique(model1_pred)
+```
+
+```{r}
+# doesn't work to fit standard logistic on model with p very large as is true in this case
+# fit logistic regression model for the first individual
+#outcome <- unlist(Duke_cleaned$connections[[1]][-1])
+#model1 <- glm(outcome ~., data = Duke_cleaned[-1,-c(7:8)], family = "binomial")
+#model1_pred <- predict(model1, newdata = Duke_cleaned[-1,-c(7:8)], type = "response")
+#summary(model1)
+# repeat this code for all the other individuals. Get 5039 models in total and for each of them you have 5038 predictions so 5039x5038 or 5038x5039 predictions. Then can compare this to the Duke_nodes_cleaned dataset (excluding the diagonal entries which whether it was connected to itself) and calculate AUC. Need to set some threshold for the probability of a match (different for each individual?)
+```
+
+```{r}
+# this code chunk takes about 12 hours to run
+# Initialize an empty dataframe to store predicted probabilities
+predicted_probabilities_df <- data.frame(matrix(NA, nrow = nrow(Duke_cleaned) - 1, 
+                                                ncol = nrow(Duke_cleaned)))
+
+# Iterate through each individual
+for (i in 1:nrow(Duke_cleaned)) {  
+  # Extract outcome variable and predictor data
+  outcome <- unlist(Duke_cleaned$connections[[i]][-i])
+  
+  set.seed(123)
+  # model matrix (excluding outcome column and individual_id column)
+  x <- model.matrix(~ .-1, Duke_cleaned[-i,-c(7,8)])
+
+  # Fit regularized logistic regression model
+  model_cv <- cv.glmnet(x = x, y = outcome, family = "binomial", alpha = 1)
+
+  # Get predicted probabilities and store them in the dataframe
+  predicted_probabilities_df[, i] <- predict(model_cv, newx = x, type = "response", 
+                                    s = "lambda.min") 
+}
+```
+
+```{r, warning = FALSE}
+# Initialize an empty dataframe to store predicted probabilities
+#predicted_probabilities_df <- data.frame(matrix(NA, nrow = nrow(Duke_cleaned) - 1, 
+#                                                ncol = nrow(Duke_cleaned)))
+
+# Iterate through each individual
+#for (i in 1:nrow(Duke_cleaned)) {  
+  # Extract outcome variable and predictor data
+#  outcome <- unlist(Duke_cleaned$connections[[i]][-i])
+#  predictor_data <- Duke_cleaned[-i,-8]  # Exclude the i-th row and "connections" column
+
+  # Fit logistic regression model
+#  model <- glm(outcome ~ ., data = predictor_data, family = "binomial")
+
+  # Get predicted probabilities and store them in the dataframe
+#  predicted_probabilities_df[, i] <- predict(model, newdata = predictor_data, 
+#                                             type = "response")
+#}
+```
+
+```{r}
+# Assuming predicted_probabilities_df is a dataframe with predicted probabilities 
+# for each individual
+
+# Initialize the matrix
+pairwise_predicted_probabilities_df <- data.frame(matrix(NA, nrow = nrow(Duke_cleaned), 
+                                                         ncol = nrow(Duke_cleaned)))
+
+# Fill in the first column based on the specified pattern
+for (i in 2:nrow(Duke_cleaned)) {
+  pairwise_predicted_probabilities_df[i, 1] <- predicted_probabilities_df[i-1, 1] * predicted_probabilities_df[1, i]
+}
+```
+
+```{r}
+# column 2
+#for (i in 3:nrow(Duke_cleaned)) {
+#  pairwise_predicted_probabilities_df[i, 2] <- predicted_probabilities_df[i-1, 2] * predicted_probabilities_df[2, i]
+#}
+```
+
+```{r}
+for (j in 2:ncol(pairwise_predicted_probabilities_df)) {
+  for (i in 1:nrow(pairwise_predicted_probabilities_df)) {
+    if (i > j) {
+      pairwise_predicted_probabilities_df[i, j] <- predicted_probabilities_df[i - 1, j] * predicted_probabilities_df[j, i]
+    }
+  }
+}
+
+# this is a lower triangular matrix of the below:
+# the resulting entries should be such that the (1,1) entry is equal to the (1,2) entry. 
+# since (1,1) is the probability of a match between ind1 and ind2 and so is (1,2).
+# Similarly, the (2,1) entry is equal to the (1,3) entry. The (3,1) entry should equal 
+# the (1,4) entry.
+```
+
+```{r}
+# make diagonal elements from Duke_nodes_cleaned dataframe NA
+Duke_nodes_cleaned <- as.matrix(Duke_nodes_cleaned)
+
+diag(Duke_nodes_cleaned)=NA
+
+# convert it into a lower triangular matrix
+Duke_nodes_cleaned[upper.tri(Duke_nodes_cleaned, diag = TRUE)] <- NA
+```
+
+```{r}
+# measure performance of model by comparing fitted probabilities in pairwise_predicted_probabilities_df to the outcome variable in Duke_nodes_cleaned
+
+# should we set a different threshold for each individual? but they are all intertwined so doesn't make sense I feel
+
+# Choose a threshold
+threshold <- 0.008
+
+# Convert probabilities to binary predictions
+binary_predictions <- ifelse(pairwise_predicted_probabilities_df >= threshold, 1, 0)
+
+# Compare predictions with true connections
+true_connections <- as.matrix(Duke_nodes_cleaned)
+
+# Evaluate performance metrics
+confusion_matrix <- table(binary_predictions, true_connections)
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+recall <- confusion_matrix[2, 2] / sum(confusion_matrix[, 2])
+precision <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+# Print performance metrics
+cat("Accuracy:", accuracy, "\n")
+cat("Precision:", precision, "\n") # quite decent actually
+cat("Recall:", recall, "\n") # why is recall and f1 score so bad
+cat("F1 Score:", f1_score, "\n")
+```
+
+Accuracy is True Positive + True Negative / True Positive + True Negative + 
+False Positive + False Negative. 
+
+Precision is the number of connections that were identified correctly by the 
+model divided by the total number of connections identified by the model. 
+Precision is True Positive/(True Positive + False Positive). So I have a lot of 
+False positives it seems i.e., incorrectly predicting a lot of connections
+so the threshold is too low. 
+
+Recall is the number of connections that were identified divided by the total
+number of connections in the dataset (total 1s). Recall is True Positive 
+divided by (True Positive + False Negative). So we found 70% of the correct 
+positive labels when threshold was about 0.008.
+
+F1 score is given by the formula: 2*TP/(2*TP + FP + FN). It uses harmonic mean. 
+
+When the threshold is set to 0.008, you get 70% of all the true 
+connections (recall) and your precision is 65% and so 35% of the recommendations
+that you are making are no good. I think this is probably a good balance between
+precision and recall. 
+
+```{r}
+# Load the pROC package
+library(pROC)
+
+# Convert probabilities to binary predictions using different thresholds
+thresholds <- seq(0, 1, by = 0.01)
+
+# Extract the true class (binary outcome) vector
+true_class_vector <- as.numeric(unlist(Duke_nodes_cleaned))
+
+# Extract the predicted probabilities vector
+predicted_probabilities_vector <- as.vector(unlist(pairwise_predicted_probabilities_df))
+
+# Create ROC curve
+roc_data <- roc(true_class_vector, predicted_probabilities_vector, thresholds = thresholds)
+
+# Plot the ROC curve
+plot(roc_data, main = "ROC Curve", col = "blue", lwd = 2)
+
+# Add AUC score to the plot
+auc_value <- auc(roc_data)
+text(0.8, 0.2, paste("AUC =", round(auc_value, 3)), col = "blue", cex = 1.2)
+```
+
+```{r}
+par(pty = "s")
+roc.info <- roc(true_class_vector, predicted_probabilities_vector, plot = TRUE, 
+    legacy.axes = TRUE, print.auc = TRUE)
+roc.df <- data.frame(
+  tpp = roc.info$sensitivities*100,
+  fpp = (1-roc.info$specificities)*100,
+  thresholds = roc.info$thresholds
+)
+head(roc.df)
+tail(roc.df)
+```
+
+The AUC is actually quite good. Can use the ROC curve to determine the 
+optimal threshold. But how?
+
+Accuracy is not the best metric since we expect very few matches for a given 
+individual so the model could have very high accuracy just by predicting no
+match for everyone. 
+
+So while your accuracy was good, your precision and recall were not. Probably 
+because you set your threshold too low such that everything was being classified 
+as no connection. So might want to adjust your threshold.
+
+```{r}
+# pairwise predicted probabilities for individual 1
+ind1_pairwise <- pairwise_predicted_probabilities_df[,1] # technically this is individual 2 from the full Duke dataset, but it's individual 1 from the Duke_cleaned dataset
+
+# adding individual_id
+ind1_pairwise <- data.frame(cbind(ind1_pairwise, Duke_cleaned$individual_id))
+names(ind1_pairwise)[names(ind1_pairwise) == 'V2'] <- 'individual_id'
+```
+
+So if I was using this model to build a recommendation system, this is how I 
+would rank the other users in terms of their likelihood to be a connection for 
+individual 1. Now I have this ranking, I can compare it to see whether or not 
+they are currently connected. But that doesn't necessarily tell me anything useful 
+about the model's performance. What if I see that the match between two individuals 
+is very high but they are not connected yet. That might be because they simply 
+haven't had the chance to find each other yet. Or are we assuming they all 
+know each other already? Is this a common problem with interpreting the 
+results from recommendation systems?
+
+```{r}
+Duke_nodes_cleaned <- data.frame(Duke_nodes_cleaned)
+
+# attach the corresponding actual 1s and 0s for individual 1 in the table ind1_pairwise
+ind1_pairwise$actual_connection <- Duke_nodes_cleaned[,1]
+
+# arrange so that the highest probability of mutual connection is first
+ind1_pairwise <- arrange(ind1_pairwise, desc(ind1_pairwise))
+
+names(ind1_pairwise)[names(ind1_pairwise) == 'ind1_pairwise'] <- 'pairwise prob.'
+
+# create a rank column
+ind1_pairwise$rank <- 1:nrow(ind1_pairwise)
+```
+
+Not sure what to make of this. Maybe ask David for interpretation?
+
+If we view the problem as showcasing a ranked ordering of individuals with 
+individuals further down the list less likely to be seen then we can . But the 
+problem I struggle with here is that suppose someone is at the top of the list 
+but they are not a current connection - does that mean that the two are not a 
+match? Or could it be that they just haven't found each other yet. I think we 
+are supposed to assume they are not a good match...
+
+Precision and recall at cutoff k. Choose k to be 10 i.e., we show the top 10
+recommendations.
+
+```{r}
+# create a column of the cumulative sum of the actual_connection column
+ind1_pairwise$csum <- ave(ind1_pairwise$actual_connection,FUN=cumsum)
+ind1_pairwise$ratio <- ind1_pairwise$csum/ind1_pairwise$rank
+```
+
+```{r}
+ind1_precision_k <- (1/10)*sum(ind1_pairwise$ratio[1:10])
+```
+
+Repeat this for all individuals:
+
+```{r}
+# first we need to get the predicted probabilities of a match for all individuals 
+# with all other individuals i.e., have to convert the lower triangular matrix to 
+# a full size matrix 
+
+pairwise_predicted_probabilities_df <- as.matrix(pairwise_predicted_probabilities_df)
+
+makeSymm <- function(m) {
+   m[upper.tri(m)] <- t(m)[upper.tri(m)]
+   return(m)
+}
+
+symmetric_matrix <- makeSymm(pairwise_predicted_probabilities_df)
+
+# also need to make Duke_nodes_cleaned symmetric 
+Duke_nodes_cleaned_symm <- makeSymm(Duke_nodes_cleaned)
+```
+
+```{r}
+ind_precision_k <- vector("numeric", length = 5039)
+
+for (i in 1:nrow(symmetric_matrix)){
+  ind_pairwise <- symmetric_matrix[,i]
+
+  # adding individual_id
+  ind_pairwise <- data.frame(cbind(ind_pairwise, Duke_cleaned$individual_id))
+  names(ind_pairwise)[names(ind_pairwise) == 'V2'] <- 'individual_id'
+  
+  ind_pairwise$actual_connection <- Duke_nodes_cleaned_symm[,i]
+
+  # arrange so that the highest probability of mutual connection is first
+  ind_pairwise <- arrange(ind_pairwise, desc(ind_pairwise))
+
+  # create a rank column
+  ind_pairwise$rank <- 1:nrow(ind_pairwise)
+  
+  ind_pairwise$csum <- ave(ind_pairwise$actual_connection,FUN=cumsum)
+  ind_pairwise$ratio <- ind_pairwise$csum/ind_pairwise$rank
+  
+  ind_precision_k[i] <- (1/10)*sum(ind_pairwise$ratio[1:10])
+}
+```
+
+```{r}
+# mean average precision
+sum(is.na(ind_precision_k)) # no missing values 
+map <- mean(ind_precision_k, na.rm = TRUE)
+map
+```
+
+```{r}
+# for testing the code above
+#ind_pairwise <- pairwise_predicted_probabilities_df[,244]
+
+  # adding individual_id
+#  ind_pairwise <- data.frame(cbind(ind_pairwise, Duke_cleaned$individual_id))
+#  names(ind_pairwise)[names(ind_pairwise) == 'V2'] <- 'individual_id'
+  
+#  ind_pairwise$actual_connection <- Duke_nodes_cleaned[,244]
+
+#  # arrange so that the highest probability of mutual connection is first
+#  ind_pairwise <- arrange(ind_pairwise, desc(ind_pairwise))
+
+  # create a rank column
+#  ind_pairwise$rank <- 1:nrow(ind_pairwise)
+  
+#  ind_pairwise$csum <- ave(ind_pairwise$actual_connection,FUN=cumsum)
+#  ind_pairwise$ratio <- ind_pairwise$csum/ind_pairwise$rank
+  
+#  ind_precision_k <- (1/10)*sum(ind_pairwise$ratio[1:10])
+```
+
+Emphasize that the product of the probabilities have no meaning on their own. 
+It's just something we use to order the individuals in terms of their 
+likelihood of being a match. 
+
+
+
+
+
+
+
+
+
+
+
+ignore: 
+Test/train split
+20-80. 
+Just remove the testing data at the start and make it into a separate dataframe.
+
+
+For each individual in the training set, we have to calculate the probability of 
+being a connection with each person in the test set so a 0.8*(5039) by 0.2*(5039)
+dataframe and vice versa for each person in the test set with each person in the 
+training set which is a 0.2*(5039) by 0.8*(5039) matrix. But then for the latter 
+case, we are essentially fitting new models on the test set which defeats the 
+point of being a test set. So maybe don't do any test train split?? 
+
+Calculate the pairwise 
+predicted probability for everybody in the test set with everyone else 
+
+
+
